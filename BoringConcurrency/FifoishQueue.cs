@@ -9,6 +9,7 @@ namespace BoringConcurrency
 {
     public class FifoishQueue<TItem> : IRemovableCollection<TItem>
     {
+        const int maxLoopCount = 100_000_000; //Prevent infinite loop
         private volatile Node m_Head = null;
         private volatile Node m_Tail = null;
 
@@ -18,20 +19,39 @@ namespace BoringConcurrency
 
         public long Count() => Interlocked.Read(ref this.m_NodeCount);
 
+        private bool TrySetTail(Node newTail)
+        {
+            var expectedTail = this.m_Tail;
+
+            //If there is a tail, try to set new to next
+            if (expectedTail != null)
+            {
+                if (!expectedTail.TrySetNext(newTail)) return false; //Try again, we lost
+                newTail.SetLast(expectedTail);
+            }
+
+            //Try to set the tail to new if tail is still set to expected
+            var tail = Interlocked.CompareExchange(ref this.m_Tail, newTail, expectedTail);
+            if (tail == null) Interlocked.CompareExchange(ref this.m_Tail, newTail, null); //Only need one attempt, as long as something is set
+            if (this.m_Head == null) SetHeadToTail();
+            return true;
+        }
+
         //Enqueue is responsible for manipulating tail
         public IRemoveable<TItem> Enqueue(TItem item)
         {
             Interlocked.Increment(ref m_NodeCount);
 
             var newTail = new Node(item);
-            SpinWait spin = new SpinWait();
+            int loopCount = 0;
             do
             {
-                var expectedTail = this.m_Tail;
-                if (expectedTail != null) newTail.SetLast(expectedTail);
-                var success = ReferenceEquals(Interlocked.CompareExchange(ref this.m_Tail, newTail, expectedTail), expectedTail);
-                if (success) return newTail;
-                spin.SpinOnce();
+                if (++loopCount == maxLoopCount)
+                {
+                    Interlocked.Decrement(ref m_NodeCount);
+                    throw new InvalidOperationException("Something bad happened. Looped way too many times.");
+                }
+                if (this.TrySetTail(newTail)) return newTail;
             } while (true);
         }
 
@@ -54,10 +74,16 @@ namespace BoringConcurrency
                 return false;
             }
 
-            SpinWait spin = new SpinWait();
             Node localHead;
+            int loopCount = 0;
             do
             {
+                if (++loopCount == maxLoopCount)
+                {
+                    Interlocked.Decrement(ref m_NodeCount);
+                    throw new InvalidOperationException("Something bad happened. Looped way too many times.");
+                }
+
                 localHead = this.m_Head;
                 if (localHead == null)
                 {
@@ -78,8 +104,6 @@ namespace BoringConcurrency
                     item = default;
                     return false;
                 }
-
-                spin.SpinOnce();
             } while (true);
         }
 

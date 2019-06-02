@@ -38,5 +38,26 @@ namespace UnitTests
 
             Assert.False(true, "Should not have gotten here");
         }
+
+        [Fact]
+        public void EnqueueDequeue_Many()
+        {
+            var collection = new FifoishQueue<int>();
+            var expected = new HashSet<int>(Enumerable.Range(0, 3));
+
+            foreach (var item in expected)
+            {
+                collection.Enqueue(item);
+            }
+
+            var result = new HashSet<int>();
+            while (collection.TryDequeue(out var item))
+            {
+                result.Add(item);
+            }
+
+            Assert.Subset(expected, result);
+            Assert.Superset(expected, result);
+        }
     }
 }
