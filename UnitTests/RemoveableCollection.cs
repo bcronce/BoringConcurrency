@@ -24,5 +24,19 @@ namespace UnitTests
 
             Assert.False(true, "Should not have gotten here");
         }
+
+        [Fact]
+        public void DequeueEmpty()
+        {
+            var collection = new FifoishQueue<int>();
+
+            if (!collection.TryDequeue(out var item))
+            {
+                Assert.Equal(default(int), item);
+                return;
+            }
+
+            Assert.False(true, "Should not have gotten here");
+        }
     }
 }
