@@ -72,5 +72,29 @@ namespace UnitTests
             collection.TryDequeue(out var item);
             Assert.False(collection.Any());
         }
+
+        [Fact]
+        public void EnqueueDequeue_Count()
+        {
+            var collection = new FifoishQueue<int>();
+            const int iterations = 100;
+
+            int expectedCount = 0;
+            foreach (var item in Enumerable.Range(0, iterations))
+            {
+                collection.Enqueue(item);
+                expectedCount++;
+                Assert.Equal(expectedCount, collection.Count());
+            }
+
+            Assert.Equal(iterations, expectedCount);
+
+            while (collection.TryDequeue(out var item))
+            {
+                expectedCount--;
+                Assert.Equal(expectedCount, collection.Count());
+            }
+            Assert.Equal(0, expectedCount);
+        }
     }
 }
