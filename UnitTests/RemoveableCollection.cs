@@ -59,5 +59,18 @@ namespace UnitTests
             Assert.Subset(expected, result);
             Assert.Superset(expected, result);
         }
+
+        [Fact]
+        public void EnqueueDequeue_Any()
+        {
+            var collection = new FifoishQueue<int>();
+
+            Assert.False(collection.Any());
+            collection.Enqueue(default);
+            Assert.True(collection.Any());
+
+            collection.TryDequeue(out var item);
+            Assert.False(collection.Any());
+        }
     }
 }
