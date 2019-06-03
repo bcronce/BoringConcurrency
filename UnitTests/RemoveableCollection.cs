@@ -3,6 +3,7 @@ using Xunit;
 using BoringConcurrency;
 using System.Linq;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace UnitTests
 {
@@ -95,6 +96,49 @@ namespace UnitTests
                 Assert.Equal(expectedCount, collection.Count());
             }
             Assert.Equal(0, expectedCount);
+        }
+
+        [Fact]
+        public void EnqueueDequeue_ManyConcurrent()
+        {
+            var collection = new FifoishQueue<int>();
+            var expected = new HashSet<int>(Enumerable.Range(0, 10_000_000));
+
+            Parallel.ForEach(expected, item => collection.Enqueue(item));
+
+            var result = new System.Collections.Concurrent.ConcurrentQueue<int>();
+            Parallel.ForEach(expected, ignore => {
+                if (collection.TryDequeue(out var dequeuedItem)) result.Enqueue(dequeuedItem);
+            });
+            var resultSet = new HashSet<int>(result);
+
+            Assert.Subset(expected, resultSet);
+            Assert.Superset(expected, resultSet);
+        }
+
+        [Fact]
+        public void ProducerConsumer_Concurrent()
+        {
+            var collection = new FifoishQueue<int>();
+            var expected = new HashSet<int>(Enumerable.Range(0, 100_000_000));
+
+            var produce = Task.Run(() => Parallel.ForEach(expected, item => collection.Enqueue(item)));
+
+            var result = new System.Collections.Concurrent.ConcurrentQueue<int>();
+            var consume = Task.Run(() =>
+                Parallel.ForEach(expected, ignore => {
+                    int dequeuedItem;
+                    while (!collection.TryDequeue(out dequeuedItem)) ;
+                    result.Enqueue(dequeuedItem);
+                })
+            );
+
+            Task.WaitAll(produce, consume);
+
+            var resultSet = new HashSet<int>(result);
+
+            Assert.Subset(expected, resultSet);
+            Assert.Superset(expected, resultSet);
         }
     }
 }
