@@ -19,20 +19,6 @@ namespace BoringConcurrency
 
         public long Count() => this.m_NodeCount;
 
-        private bool TrySetTail(Node newTail)
-        {
-            var expectedTail = this.m_Tail;
-
-            if (!expectedTail.TrySetNext(newTail)) return false; //Try again, we lost
-            newTail.SetLast(expectedTail); //If we got here, we won
-
-            //Try to set the tail to new if tail is still set to expected.
-            //Already know we won setting the curren tail's "next". No other node can procede to here until set.
-            this.m_Tail = newTail; //No need for CAS if only one thread of logic can be here
-            return true;
-        }
-
-        //Enqueue is responsible for manipulating tail
         public IRemoveable<TItem> Enqueue(TItem item)
         {
             Debug.Assert(this.m_Head != null);
@@ -45,31 +31,14 @@ namespace BoringConcurrency
             }
 
             var newTail = new Node(item);
-            int loopCount = 0;
-            do
-            {
-                if (++loopCount == maxLoopCount)
-                {
-                    Interlocked.Decrement(ref m_NodeCount);
-                    throw new InvalidOperationException("Something bad happened. Looped way too many times.");
-                }
+            var assumedTail = this.m_Tail;
 
-                if (this.TrySetTail(newTail)) return newTail;
-            } while (true);
+            while (!assumedTail.TrySetNext(newTail)) assumedTail = assumedTail.Next;
+            this.m_Tail = newTail;
+
+            return newTail;
         }
 
-        private void SetHeadToNext(Node current)
-        {
-            if (current.IsReady) return;
-            var next = current.Next;
-
-            while (next != null && !next.IsReady) next = next.Next;
-
-            //Head should never be null
-            if (next != null) Interlocked.CompareExchange(ref this.m_Head, next, current);
-        }
-
-        //Dequeue is responsible for manipulating head
         public bool TryDequeue(out TItem item)
         {
             Debug.Assert(this.m_Head != null);
@@ -80,33 +49,18 @@ namespace BoringConcurrency
                 return false;
             }
 
-            Node localHead;
-            int loopCount = 0;
-            do
+            Node localHead = this.m_Head;
+            while (true)
             {
-                if (++loopCount == maxLoopCount)
-                {
-                    Interlocked.Decrement(ref m_NodeCount);
-                    throw new InvalidOperationException("Something bad happened. Looped way too many times.");
-                }
-
-                localHead = this.m_Head;
                 if (localHead.TryTake(out item))
                 {
-                    SetHeadToNext(localHead);
                     Interlocked.Decrement(ref m_NodeCount);
+                    this.m_Head = localHead.Next == null ? localHead : localHead.Next;
                     return true;
                 }
-
-                //Head can't be null. May be the last consumed. Try walking the chain.
-                if (!localHead.IsReady) SetHeadToNext(localHead);
-
-                if (this.m_NodeCount == 0)
-                {
-                    item = default;
-                    return false;
-                }
-            } while (true);
+                else if (localHead.Next == null) return false; //We reached the end
+                else localHead = localHead.Next; //Get next node and try again
+            }
         }
 
         public FifoishQueue()
