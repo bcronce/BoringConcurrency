@@ -35,6 +35,8 @@ namespace BoringConcurrency
         //Enqueue is responsible for manipulating tail
         public IRemoveable<TItem> Enqueue(TItem item)
         {
+            Debug.Assert(this.m_Head != null);
+            Debug.Assert(this.m_Tail != null);
             Interlocked.Increment(ref m_NodeCount);
 
             var newTail = new Node(item);
@@ -65,6 +67,8 @@ namespace BoringConcurrency
         //Dequeue is responsible for manipulating head
         public bool TryDequeue(out TItem item)
         {
+            Debug.Assert(this.m_Head != null);
+            Debug.Assert(this.m_Tail != null);
             if (Interlocked.Read(ref this.m_NodeCount) == 0)
             {
                 item = default;
