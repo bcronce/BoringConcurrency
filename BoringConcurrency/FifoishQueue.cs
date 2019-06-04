@@ -13,11 +13,11 @@ namespace BoringConcurrency
         private volatile Node m_Head = null;
         private volatile Node m_Tail = null;
 
-        private long m_NodeCount = 0;
+        private volatile int m_NodeCount = 0;
 
-        public bool Any() => Interlocked.Read(ref this.m_NodeCount) > 0;
+        public bool Any() => this.m_NodeCount > 0;
 
-        public long Count() => Interlocked.Read(ref this.m_NodeCount);
+        public long Count() => this.m_NodeCount;
 
         private bool TrySetTail(Node newTail)
         {
@@ -28,7 +28,7 @@ namespace BoringConcurrency
 
             //Try to set the tail to new if tail is still set to expected.
             //Already know we won setting the curren tail's "next". No other node can procede to here until set.
-            Interlocked.CompareExchange(ref this.m_Tail, newTail, expectedTail);
+            this.m_Tail = newTail; //No need for CAS if only one thread of logic can be here
             return true;
         }
 
@@ -37,7 +37,12 @@ namespace BoringConcurrency
         {
             Debug.Assert(this.m_Head != null);
             Debug.Assert(this.m_Tail != null);
-            Interlocked.Increment(ref m_NodeCount);
+            var currentCount = Interlocked.Increment(ref m_NodeCount);
+            if (currentCount < 0)
+            {
+                Interlocked.Decrement(ref m_NodeCount);
+                throw new InvalidOperationException("Too many items added to collection");
+            }
 
             var newTail = new Node(item);
             int loopCount = 0;
@@ -69,7 +74,7 @@ namespace BoringConcurrency
         {
             Debug.Assert(this.m_Head != null);
             Debug.Assert(this.m_Tail != null);
-            if (Interlocked.Read(ref this.m_NodeCount) == 0)
+            if (this.m_NodeCount == 0)
             {
                 item = default;
                 return false;
@@ -96,7 +101,7 @@ namespace BoringConcurrency
                 //Head can't be null. May be the last consumed. Try walking the chain.
                 if (!localHead.IsReady) SetHeadToNext(localHead);
 
-                if (Interlocked.Read(ref m_NodeCount) == 0)
+                if (this.m_NodeCount == 0)
                 {
                     item = default;
                     return false;
