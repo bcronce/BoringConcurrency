@@ -23,17 +23,12 @@ namespace BoringConcurrency
         {
             var expectedTail = this.m_Tail;
 
-            //If there is a tail, try to set new to next
-            if (expectedTail != null)
-            {
-                if (!expectedTail.TrySetNext(newTail)) return false; //Try again, we lost
-                newTail.SetLast(expectedTail);
-            }
+            if (!expectedTail.TrySetNext(newTail)) return false; //Try again, we lost
+            newTail.SetLast(expectedTail); //If we got here, we won
 
-            //Try to set the tail to new if tail is still set to expected
-            var tail = Interlocked.CompareExchange(ref this.m_Tail, newTail, expectedTail);
-            if (tail == null) Interlocked.CompareExchange(ref this.m_Tail, newTail, null); //Only need one attempt, as long as something is set
-            if (this.m_Head == null) SetHeadToTail();
+            //Try to set the tail to new if tail is still set to expected.
+            //Already know we won setting the curren tail's "next". No other node can procede to here until set.
+            Interlocked.CompareExchange(ref this.m_Tail, newTail, expectedTail);
             return true;
         }
 
@@ -51,18 +46,20 @@ namespace BoringConcurrency
                     Interlocked.Decrement(ref m_NodeCount);
                     throw new InvalidOperationException("Something bad happened. Looped way too many times.");
                 }
+
                 if (this.TrySetTail(newTail)) return newTail;
             } while (true);
         }
 
-        private void SetHeadToTail() => Interlocked.CompareExchange(ref this.m_Head, this.m_Tail, null);
         private void SetHeadToNext(Node current)
         {
+            if (current.IsReady) return;
             var next = current.Next;
 
-            while (next != null && !next.IsReady) next = current.Next;
+            while (next != null && !next.IsReady) next = next.Next;
 
-            Interlocked.CompareExchange(ref this.m_Head, next, current);
+            //Head should never be null
+            if (next != null) Interlocked.CompareExchange(ref this.m_Head, next, current);
         }
 
         //Dequeue is responsible for manipulating head
@@ -85,19 +82,15 @@ namespace BoringConcurrency
                 }
 
                 localHead = this.m_Head;
-                if (localHead == null)
+                if (localHead.TryTake(out item))
                 {
-                    SetHeadToTail();
+                    SetHeadToNext(localHead);
+                    Interlocked.Decrement(ref m_NodeCount);
+                    return true;
                 }
-                else
-                {
-                    if (localHead.TryTake(out item))
-                    {
-                        Interlocked.Decrement(ref m_NodeCount);
-                        SetHeadToNext(localHead);
-                        return true;
-                    }
-                }
+
+                //Head can't be null. May be the last consumed. Try walking the chain.
+                if (!localHead.IsReady) SetHeadToNext(localHead);
 
                 if (Interlocked.Read(ref m_NodeCount) == 0)
                 {
@@ -105,6 +98,13 @@ namespace BoringConcurrency
                     return false;
                 }
             } while (true);
+        }
+
+        public FifoishQueue()
+        {
+            var placeholder = Node.GetDoneNode();
+            this.m_Head = placeholder;
+            this.m_Tail = placeholder;
         }
 
         protected class Node : IRemoveable<TItem>
@@ -126,6 +126,16 @@ namespace BoringConcurrency
                 MarkedForRemoval,
                 Removing,
                 Done
+            }
+
+            public static Node GetDoneNode()
+            {
+                return new Node();
+            }
+
+            protected Node()
+            {
+                this.m_Status = Status.Done;
             }
 
             public void SetLast(Node last) => this.m_Last = last;
@@ -193,7 +203,7 @@ namespace BoringConcurrency
 
             public bool TrySetNext(Node next)
             {
-                Debug.Assert(this.m_Status == Status.Ready);
+                Debug.Assert(this.m_Status == Status.Ready || this.m_Status == Status.Done);
                 return Interlocked.CompareExchange(ref this.m_Next, next, null) == null;
             }
 
