@@ -33,7 +33,12 @@ namespace BoringConcurrency
             var newTail = new Node(item);
             var assumedTail = this.m_Tail;
 
-            while (!assumedTail.TrySetNext(newTail)) assumedTail = assumedTail.Next;
+            newTail.SetLast(assumedTail);
+            while (!assumedTail.TrySetNext(newTail))
+            {
+                assumedTail = assumedTail.Next;
+                newTail.SetLast(assumedTail);
+            }
             this.m_Tail = newTail;
 
             return newTail;
