@@ -163,6 +163,7 @@ namespace BoringConcurrency
             {
                 Debug.Assert(this.m_Status == Status.Ready || this.m_Status == Status.Done);
                 Debug.Assert(!ReferenceEquals(this, next));
+                if (this.m_Next != null) return false;
                 return Interlocked.CompareExchange(ref this.m_Next, next, null) == null;
             }
 
