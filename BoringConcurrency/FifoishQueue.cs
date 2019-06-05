@@ -96,15 +96,9 @@ namespace BoringConcurrency
                 Done
             }
 
-            public static Node GetDoneNode()
-            {
-                return new Node();
-            }
+            public static Node GetDoneNode() => new Node();
 
-            protected Node()
-            {
-                this.m_Status = Status.Done;
-            }
+            protected Node() => this.m_Status = Status.Done;
 
             public void SetLast(Node last) => this.m_Last = last;
 
