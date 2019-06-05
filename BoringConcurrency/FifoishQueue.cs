@@ -121,6 +121,7 @@ namespace BoringConcurrency
                 {
                     item = this.m_Value;
                     this.m_Value = default;
+                    this.m_Last = null; //Unanchor the last node.
                     return true;
                 }
                 else
