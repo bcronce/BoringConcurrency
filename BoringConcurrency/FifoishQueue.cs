@@ -108,11 +108,6 @@ namespace BoringConcurrency
                 Interlocked.Exchange(ref this.m_Next, next);
             }
 
-            public void Clear()
-            {
-                throw new NotImplementedException();
-            }
-
             public bool TryTake(out TItem item)
             {
                 var currentStatus = this.m_Status;
