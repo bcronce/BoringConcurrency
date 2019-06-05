@@ -162,6 +162,7 @@ namespace BoringConcurrency
             public bool TrySetNext(Node next)
             {
                 Debug.Assert(this.m_Status == Status.Ready || this.m_Status == Status.Done);
+                Debug.Assert(!ReferenceEquals(this, next));
                 return Interlocked.CompareExchange(ref this.m_Next, next, null) == null;
             }
 
