@@ -126,11 +126,7 @@ namespace BoringConcurrency
 
             public void SetLast(Node last) => this.m_Last = last;
 
-            protected void UpdateNext(Node next)
-            {
-                Debug.Assert(this.m_Next.GetStatus == Status.Removing, $"Status expected to be {Status.Removing}");
-                Interlocked.Exchange(ref this.m_Next, next);
-            }
+            protected void UpdateNext(Node next) => this.m_Next = next;
 
             public bool TryTake(out TItem item)
             {
