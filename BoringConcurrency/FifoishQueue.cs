@@ -9,7 +9,6 @@ namespace BoringConcurrency
 {
     public class FifoishQueue<TItem> : IRemovableCollection<TItem>
     {
-        const int maxLoopCount = 100_000_000; //Prevent infinite loop
         private volatile Node m_Head = null;
         private volatile Node m_Tail = null;
 
