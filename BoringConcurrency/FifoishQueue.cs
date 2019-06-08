@@ -13,6 +13,7 @@ namespace BoringConcurrency
         private volatile Node m_Tail = null;
 
         private volatile int m_NodeCount = 0;
+        private readonly Action m_OnRemoval;
 
         public bool Any() => this.m_NodeCount > 0;
 
@@ -29,7 +30,7 @@ namespace BoringConcurrency
                 throw new InvalidOperationException("Too many items added to collection");
             }
 
-            var newTail = new Node(item);
+            var newTail = new Node(item, this.m_OnRemoval);
             var localTail = this.m_Tail;
             newTail.SetLast(localTail);
             if (localTail.TrySetNext(newTail))
@@ -95,6 +96,7 @@ namespace BoringConcurrency
             var placeholder = Node.GetDoneNode();
             this.m_Head = placeholder;
             this.m_Tail = placeholder;
+            this.m_OnRemoval = () => { Interlocked.Decrement(ref this.m_NodeCount); };
         }
 
         protected class Node : IRemoveable<TItem>
@@ -107,6 +109,7 @@ namespace BoringConcurrency
             public bool IsReady => this.m_Status == Status.Ready;
 
             private Status m_Status;
+            private Action m_OnRemoval;
             protected Status GetStatus => this.m_Status;
 
             protected enum Status
@@ -170,6 +173,7 @@ namespace BoringConcurrency
                 if (result == Status.Ready)
                 {
                     Remove();
+                    this.m_OnRemoval();
                     item = this.m_Value;
                     this.m_Value = default;
                     return true;
@@ -189,8 +193,9 @@ namespace BoringConcurrency
                 return Interlocked.CompareExchange(ref this.m_Next, next, null) == null;
             }
 
-            public Node(TItem item)
+            public Node(TItem item, Action onRemoval)
             {
+                this.m_OnRemoval = onRemoval;
                 this.m_Status = Status.Ready;
                 this.m_Value = item;
                 this.m_Last = null;

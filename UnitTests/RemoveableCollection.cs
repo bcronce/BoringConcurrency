@@ -99,6 +99,31 @@ namespace UnitTests
         }
 
         [Fact]
+        public void EnqueueDequeue_Count_Removal()
+        {
+            var collection = new FifoishQueue<int>();
+            const int iterations = 100;
+
+            int expectedCount = 0;
+            var removalCollection = new List<IRemoveable<int>>();
+            foreach (var item in Enumerable.Range(0, iterations))
+            {
+                removalCollection.Add(collection.Enqueue(item));
+                expectedCount++;
+                Assert.Equal(expectedCount, collection.Count());
+            }
+
+            Assert.Equal(iterations, expectedCount);
+
+            foreach(var node in removalCollection)
+            {
+                Assert.True(node.TryRemove(out var ignore));
+                expectedCount--;
+            }
+            Assert.Equal(0, collection.Count());
+        }
+
+        [Fact]
         public void EnqueueDequeue_ManyConcurrent()
         {
             var collection = new FifoishQueue<int>();
