@@ -23,10 +23,10 @@ namespace BoringConcurrency
         {
             Debug.Assert(this.m_Head != null);
             Debug.Assert(this.m_Tail != null);
-            var currentCount = Interlocked.Increment(ref m_NodeCount);
+            var currentCount = Interlocked.Increment(ref this.m_NodeCount);
             if (currentCount < 0)
             {
-                Interlocked.Decrement(ref m_NodeCount);
+                Interlocked.Decrement(ref this.m_NodeCount);
                 throw new InvalidOperationException("Too many items added to collection");
             }
 
@@ -68,7 +68,7 @@ namespace BoringConcurrency
             Node localHead = this.m_Head;
             if (localHead.TryTake(out item))
             {
-                Interlocked.Decrement(ref m_NodeCount);
+                Interlocked.Decrement(ref this.m_NodeCount);
                 if (localHead.Next != null) this.m_Head = localHead.Next;
                 return true;
             }
@@ -80,7 +80,7 @@ namespace BoringConcurrency
                 localHead = this.m_Head;
                 if (localHead.TryTake(out item))
                 {
-                    Interlocked.Decrement(ref m_NodeCount);
+                    Interlocked.Decrement(ref this.m_NodeCount);
                     if (localHead.Next != null) this.m_Head = localHead.Next;
                     return true;
                 }
