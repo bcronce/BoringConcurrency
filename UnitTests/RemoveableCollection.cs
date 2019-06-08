@@ -4,6 +4,7 @@ using BoringConcurrency;
 using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace UnitTests
 {
@@ -164,6 +165,51 @@ namespace UnitTests
 
             Assert.Subset(expected, resultSet);
             Assert.Superset(expected, resultSet);
+        }
+
+        [Fact]
+        public void Removal()
+        {
+            var collection = new FifoishQueue<long>();
+            var expected = new HashSet<long>(Enumerable.Range(0, 100).Select(x => (long)x));
+            long expectedValue = expected.Sum();
+
+            var removal = new List<IRemoveable<long>>();
+            //Prime the collection
+            foreach (var item in expected)
+            {
+                removal.Add(collection.Enqueue(item));
+            }
+
+            long result = 0;
+            foreach (var remove in removal)
+            {
+                if (remove.TryRemove(out var item)) result += item;
+            }
+
+            Assert.Equal(expectedValue, result);
+        }
+
+        [Fact]
+        public void ConcurrentRemoval()
+        {
+            var collection = new FifoishQueue<long>();
+            var expected = new HashSet<long>(Enumerable.Range(0, 10_000_000).Select(x => (long)x));
+            long expectedValue = expected.Sum();
+
+            var removal = new List<IRemoveable<long>>();
+            //Prime the collection
+            foreach (var item in expected)
+            {
+                removal.Add(collection.Enqueue(item));
+            }
+
+            long result = 0;
+            Parallel.ForEach(removal, node => {
+                if (node.TryRemove(out var item)) Interlocked.Add(ref result, item);
+            });
+
+            Assert.Equal(expectedValue, result);
         }
     }
 }

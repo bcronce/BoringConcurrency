@@ -117,7 +117,6 @@ namespace BoringConcurrency
                 Ready,
                 Consuming,
                 MarkedForRemoval,
-                Removing,
                 Done
             }
 
@@ -144,6 +143,7 @@ namespace BoringConcurrency
 
                 if (InterlockedEnum<Status>.CompareExchange(ref this.m_Status, Status.Done, currentStatus) == Status.Ready)
                 {
+                    this.m_Last = null;
                     item = this.m_Value;
                     this.m_Value = default;
                     this.m_Last = null; //Unanchor the last node.
@@ -158,13 +158,22 @@ namespace BoringConcurrency
 
             private void Remove()
             {
-                if (this.m_Next == null)
+                Node localNext = this.m_Next;
+                if (localNext != null && localNext.m_Status != Status.Ready)
                 {
-                    throw new NotImplementedException();
+                    localNext = localNext.Next;
+                    if (localNext != null && localNext.m_Status != Status.Ready)
+                    {
+                        do
+                        {
+                            localNext = localNext.Next;
+                        }
+                        while (localNext != null && localNext.m_Status != Status.Ready);
+                    }
                 }
+                this.m_Next = localNext;
 
-                var result = InterlockedEnum<Status>.Exchange(ref m_Status, Status.Done);
-                Debug.Assert(result == Status.Removing, $"Unexpected status {result}");
+                if (this.m_Last != null) this.m_Last.UpdateNext(this.m_Next);
             }
             public bool TryRemove(out TItem item)
             {
@@ -172,7 +181,9 @@ namespace BoringConcurrency
 
                 if (result == Status.Ready)
                 {
-                    Remove();
+                    this.Remove();
+                    this.m_Status = Status.Done;
+                    this.m_Last = null;
                     this.m_OnRemoval();
                     item = this.m_Value;
                     this.m_Value = default;
