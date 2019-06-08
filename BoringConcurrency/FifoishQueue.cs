@@ -9,8 +9,8 @@ namespace BoringConcurrency
 {
     public class FifoishQueue<TItem> : IRemovableCollection<TItem>
     {
-        private volatile Node m_Head = null;
-        private volatile Node m_Tail = null;
+        private volatile Node m_Head;
+        private volatile Node m_Tail;
 
         private volatile int m_NodeCount = 0;
         private readonly Action m_OnRemoval;
