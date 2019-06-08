@@ -32,16 +32,27 @@ namespace BoringConcurrency
 
             var newTail = new Node(item);
             var localTail = this.m_Tail;
-
             newTail.SetLast(localTail);
-            while (!localTail.TrySetNext(newTail))
+            if (localTail.TrySetNext(newTail))
             {
-                localTail = localTail.Next;
-                newTail.SetLast(localTail);
+                this.m_Tail = newTail;
+                return newTail;
             }
-            this.m_Tail = newTail;
 
-            return newTail;
+            var spin = new SpinWait();
+            do
+            {
+                localTail = this.m_Tail;
+                newTail.SetLast(localTail);
+
+                if (localTail.TrySetNext(newTail))
+                {
+                    this.m_Tail = newTail;
+                    return newTail;
+                }
+                spin.SpinOnce();
+            }
+            while (true);
         }
 
         public bool TryDequeue(out TItem item)
@@ -55,17 +66,29 @@ namespace BoringConcurrency
             }
 
             Node localHead = this.m_Head;
-            while (true)
+            if (localHead.TryTake(out item))
             {
+                Interlocked.Decrement(ref m_NodeCount);
+                if (localHead.Next != null) this.m_Head = localHead.Next;
+                return true;
+            }
+            else if (localHead.Next == null) return false; //We reached the end
+
+            var spin = new SpinWait();
+            do
+            {
+                localHead = this.m_Head;
                 if (localHead.TryTake(out item))
                 {
                     Interlocked.Decrement(ref m_NodeCount);
-                    this.m_Head = localHead.Next == null ? localHead : localHead.Next;
+                    if (localHead.Next != null) this.m_Head = localHead.Next;
                     return true;
                 }
                 else if (localHead.Next == null) return false; //We reached the end
-                else localHead = localHead.Next; //Get next node and try again
+                else this.m_Head = localHead.Next;
+                spin.SpinOnce();
             }
+            while (true);
         }
 
         public FifoishQueue()
