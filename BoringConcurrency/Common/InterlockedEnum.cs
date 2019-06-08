@@ -7,40 +7,37 @@ using System.Threading;
 
 namespace BoringConcurrency.Common
 {
-    public static class InterlockedEnum
+    public static class InterlockedEnum<TEnum> where TEnum : struct, Enum
     {
-        private static void AssertInt<T>() where T : Enum
+        private static bool s_ValidType;
+
+        static InterlockedEnum()
         {
-            Type typeOfEnum = Enum.GetUnderlyingType(typeof(T));
-            bool isIntOrLong = typeOfEnum == typeof(int);
-            Debug.Assert(isIntOrLong, "Only supports int");
+            Type typeOfEnum = Enum.GetUnderlyingType(typeof(TEnum));
+            s_ValidType = typeOfEnum == typeof(int);
         }
 
-        public static T CompareExchange<T>(ref T location1, T value, T comparand) where T : Enum
+        public static TEnum CompareExchange(ref TEnum location1, TEnum value, TEnum comparand)
         {
-#if DEBUG
-            AssertInt<T>();
-#endif
+            if (!s_ValidType) throw new InvalidCastException("Enum must be type int");
 
             int returnValue = Interlocked.CompareExchange(
-                location1: ref Unsafe.As<T, int>(ref location1)
-                , value: Unsafe.As<T, int>(ref value)
-                , comparand: Unsafe.As<T, int>(ref comparand)
+                location1: ref Unsafe.As<TEnum, int>(ref location1)
+                , value: Unsafe.As<TEnum, int>(ref value)
+                , comparand: Unsafe.As<TEnum, int>(ref comparand)
             );
-            return Unsafe.As<int, T>(ref returnValue);
+            return Unsafe.As<int, TEnum>(ref returnValue);
         }
 
-        public static T Exchange<T>(ref T location1, T value) where T : Enum
+        public static TEnum Exchange(ref TEnum location1, TEnum value)
         {
-#if DEBUG
-            AssertInt<T>();
-#endif
+            if (!s_ValidType) throw new InvalidCastException("Enum must be type int");
 
             int returnValue = Interlocked.Exchange(
-                location1: ref Unsafe.As<T, int>(ref location1)
-                , value: Unsafe.As<T, int>(ref value)
+                location1: ref Unsafe.As<TEnum, int>(ref location1)
+                , value: Unsafe.As<TEnum, int>(ref value)
             );
-            return Unsafe.As<int, T>(ref returnValue);
+            return Unsafe.As<int, TEnum>(ref returnValue);
         }
     }
 }

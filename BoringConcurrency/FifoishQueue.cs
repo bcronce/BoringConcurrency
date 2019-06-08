@@ -140,7 +140,7 @@ namespace BoringConcurrency
                     return false;
                 }
 
-                if (InterlockedEnum.CompareExchange(ref this.m_Status, Status.Done, currentStatus) == Status.Ready)
+                if (InterlockedEnum<Status>.CompareExchange(ref this.m_Status, Status.Done, currentStatus) == Status.Ready)
                 {
                     item = this.m_Value;
                     this.m_Value = default;
@@ -161,12 +161,12 @@ namespace BoringConcurrency
                     throw new NotImplementedException();
                 }
 
-                var result = InterlockedEnum.Exchange(ref m_Status, Status.Done);
+                var result = InterlockedEnum<Status>.Exchange(ref m_Status, Status.Done);
                 Debug.Assert(result == Status.Removing, $"Unexpected status {result}");
             }
             public bool TryRemove(out TItem item)
             {
-                var result = InterlockedEnum.CompareExchange(ref this.m_Status, Status.MarkedForRemoval, Status.Ready);
+                var result = InterlockedEnum<Status>.CompareExchange(ref this.m_Status, Status.MarkedForRemoval, Status.Ready);
 
                 if (result == Status.Ready)
                 {
