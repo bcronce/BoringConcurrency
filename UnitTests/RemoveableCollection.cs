@@ -95,7 +95,7 @@ namespace UnitTests
                 expectedCount--;
                 Assert.Equal(expectedCount, collection.Count());
             }
-            Assert.Equal(0, expectedCount);
+            Assert.Equal(0, collection.Count());
         }
 
         [Fact]
