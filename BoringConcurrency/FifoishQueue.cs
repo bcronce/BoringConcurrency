@@ -31,13 +31,13 @@ namespace BoringConcurrency
             }
 
             var newTail = new Node(item);
-            var assumedTail = this.m_Tail;
+            var localTail = this.m_Tail;
 
-            newTail.SetLast(assumedTail);
-            while (!assumedTail.TrySetNext(newTail))
+            newTail.SetLast(localTail);
+            while (!localTail.TrySetNext(newTail))
             {
-                assumedTail = assumedTail.Next;
-                newTail.SetLast(assumedTail);
+                localTail = localTail.Next;
+                newTail.SetLast(localTail);
             }
             this.m_Tail = newTail;
 
