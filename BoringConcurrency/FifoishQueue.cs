@@ -17,18 +17,18 @@ namespace BoringConcurrency
 
         public bool Any() => this.m_NodeCount > 0;
 
-        public long Count() => this.m_NodeCount;
+        public int Count() => this.m_NodeCount;
 
         public IRemoveable<TItem> Enqueue(TItem item)
         {
             Debug.Assert(this.m_Head != null);
             Debug.Assert(this.m_Tail != null);
-            var currentCount = Interlocked.Increment(ref this.m_NodeCount);
+            /*var currentCount = Interlocked.Increment(ref this.m_NodeCount);
             if (currentCount < 0)
             {
                 Interlocked.Decrement(ref this.m_NodeCount);
                 throw new InvalidOperationException("Too many items added to collection");
-            }
+            }*/
 
             var newTail = new Node(item, this.m_OnRemoval);
             var localTail = this.m_Tail;
@@ -36,23 +36,34 @@ namespace BoringConcurrency
             if (localTail.TrySetNext(newTail))
             {
                 this.m_Tail = newTail;
+                Interlocked.Increment(ref this.m_NodeCount);
                 return newTail;
             }
 
             var spin = new SpinWait();
             do
             {
-                localTail = this.m_Tail;
+                Node.MostRecent(localTail.Next, this.m_Tail, out localTail);
                 newTail.SetLast(localTail);
-
                 if (localTail.TrySetNext(newTail))
                 {
                     this.m_Tail = newTail;
+                    Interlocked.Increment(ref this.m_NodeCount);
                     return newTail;
                 }
                 spin.SpinOnce();
             }
             while (true);
+        }
+
+        //[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private void TestState()
+        {
+            if (!(ReferenceEquals(this.m_Head, this.m_Tail) || this.m_Head.Next != null))
+            {
+                Debugger.Break();
+                //throw new InvalidOperationException("foobar");
+            }
         }
 
         public bool TryDequeue(out TItem item)
@@ -64,7 +75,7 @@ namespace BoringConcurrency
                 item = default;
                 return false;
             }
-
+            Debug.Assert(this.m_Head == this.m_Tail || this.m_Head.Next != null);
             Node localHead = this.m_Head;
             if (localHead.TryTake(out item))
             {
@@ -73,20 +84,29 @@ namespace BoringConcurrency
                 return true;
             }
             else if (localHead.Next == null) return false; //We reached the end
-
+            
             var spin = new SpinWait();
             do
             {
-                localHead = this.m_Head;
+                Node.MostRecent(localHead.Next, this.m_Head, out localHead);
                 if (localHead.TryTake(out item))
                 {
                     Interlocked.Decrement(ref this.m_NodeCount);
-                    if (localHead.Next != null) this.m_Head = localHead.Next;
+                    var next = localHead.Next;
+                    if (next != null) this.m_Head = next;
+                    else this.m_Head = localHead;
+                    this.TestState();
                     return true;
                 }
                 else if (localHead.Next == null) return false; //We reached the end
                 else this.m_Head = localHead.Next;
                 spin.SpinOnce();
+
+                if (this.m_NodeCount == 0)
+                {
+                    item = default;
+                    return false;
+                }
             }
             while (true);
         }
@@ -101,9 +121,11 @@ namespace BoringConcurrency
 
         protected class Node : IRemoveable<TItem>
         {
+            protected ulong Index { get; private set; } = ulong.MaxValue;
             private TItem m_Value;
             private volatile Node m_Last;
             private volatile Node m_Next;
+
 
             public Node Next => this.m_Next;
             public bool IsReady => this.m_Status == Status.Ready;
@@ -120,13 +142,28 @@ namespace BoringConcurrency
                 Done
             }
 
-            public static Node GetDoneNode() => new Node();
+            public static Node GetDoneNode() => new Node(0);
 
-            protected Node() => this.m_Status = Status.Done;
+            protected Node(ulong index)
+            {
+                this.Index = index;
+                this.m_Status = Status.Done;
+            }
 
-            public void SetLast(Node last) => this.m_Last = last;
+            public void SetLast(Node last)
+            {
+                this.m_Last = last;
+                this.Index = last.Index + 1;
+            }
 
-            protected void UpdateNext(Node next) => this.m_Next = next;
+            protected void UpdateNext(Node next)
+            {
+                Debug.Assert(next != null);
+                Debug.Assert(!ReferenceEquals(this, next));
+                if (next == null) throw new NullReferenceException("foobar null");
+                if (next.Index == 0) throw new NullReferenceException("foobar zero");
+                this.m_Next = next;
+            }
 
             public bool TryTake(out TItem item)
             {
@@ -139,7 +176,6 @@ namespace BoringConcurrency
 
                 if (InterlockedEnum<Status>.CompareExchange(ref this.m_Status, Status.Done, currentStatus) == Status.Ready)
                 {
-                    this.m_Last = null;
                     item = this.m_Value;
                     this.m_Value = default;
                     this.m_Last = null; //Unanchor the last node.
@@ -152,24 +188,43 @@ namespace BoringConcurrency
                 }
             }
 
-            private void Remove()
+            public static void MostRecent(Node input1, Node intpu2, out Node result)
             {
-                Node localNext = this.m_Next;
+                Debug.Assert(input1 != null);
+                Debug.Assert(intpu2 != null);
+                //const uint halfWay = uint.MaxValue / 2;
+                //This assume there will never be more than 2^31 items in the queue
+                if (input1.Index >= intpu2.Index)
+                    result = input1;
+                else
+                    result = intpu2;
+            }
+
+            protected static bool TryGetNextMostAvaliable(Node current, out Node nextBest)
+            {
+                Node result = null;
+                var localNext = current.Next;
                 if (localNext != null && localNext.m_Status != Status.Ready)
                 {
-                    localNext = localNext.Next;
-                    if (localNext != null && localNext.m_Status != Status.Ready)
+                    result = localNext;
+                    do
                     {
-                        do
-                        {
-                            localNext = localNext.Next;
-                        }
-                        while (localNext != null && localNext.m_Status != Status.Ready);
+                        localNext = localNext.Next;
+                        if (localNext == null) break; //Reached the end of the road
+                        var currentNext = current.Next;
+                        if (currentNext != null) MostRecent(localNext, currentNext, out localNext);
+                        if (localNext != null) result = localNext;
                     }
+                    while (localNext.m_Status != Status.Ready);
                 }
-                this.m_Next = localNext;
+                nextBest = result;
+                return result != null;
+            }
 
-                if (this.m_Last != null) this.m_Last.UpdateNext(this.m_Next);
+            private void Remove()
+            {
+                if (TryGetNextMostAvaliable(this, out var nextBest)) this.m_Next = nextBest;
+                if (this.m_Last != null && this.m_Next != null) this.m_Last.UpdateNext(this.m_Next);
             }
             public bool TryRemove(out TItem item)
             {
@@ -196,6 +251,8 @@ namespace BoringConcurrency
             {
                 Debug.Assert(this.m_Status == Status.Ready || this.m_Status == Status.Done);
                 Debug.Assert(!ReferenceEquals(this, next));
+                if (next.Index == 0) throw new NullReferenceException("foobar tryset zero ");
+                if (next.Index == ulong.MaxValue) throw new NullReferenceException("foobar tryset max ");
                 if (this.m_Next != null) return false;
                 return Interlocked.CompareExchange(ref this.m_Next, next, null) == null;
             }

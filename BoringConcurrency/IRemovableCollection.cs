@@ -8,7 +8,7 @@ namespace BoringConcurrency
     {
         IRemoveable<TItem> Enqueue(TItem item);
         bool TryDequeue(out TItem item);
-        long Count();
+        int Count();
         bool Any();
     }
 }

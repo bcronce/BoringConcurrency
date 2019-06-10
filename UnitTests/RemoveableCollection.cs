@@ -133,6 +133,8 @@ namespace UnitTests
             Parallel.ForEach(expected, item => collection.Enqueue(item));
 
             var result = new System.Collections.Concurrent.ConcurrentQueue<int>();
+            //System.Threading.Thread.Sleep(TimeSpan.FromSeconds(5.0));
+            //while (collection.TryDequeue(out var dequeuedItem)) result.Enqueue(dequeuedItem);
             Parallel.ForEach(expected, ignore => {
                 if (collection.TryDequeue(out var dequeuedItem)) result.Enqueue(dequeuedItem);
             });
@@ -146,13 +148,14 @@ namespace UnitTests
         public void ProducerConsumer_Concurrent()
         {
             var collection = new FifoishQueue<int>();
-            var expected = new HashSet<int>(Enumerable.Range(0, 100_000_000));
+            var expected = new HashSet<int>(Enumerable.Range(0, 10_000_000));
 
             var produce = Task.Run(() => Parallel.ForEach(expected, item => collection.Enqueue(item)));
 
             var result = new System.Collections.Concurrent.ConcurrentQueue<int>();
             var consume = Task.Run(() =>
                 Parallel.ForEach(expected, ignore => {
+                    //produce.Wait();
                     int dequeuedItem;
                     while (!collection.TryDequeue(out dequeuedItem)) ;
                     result.Enqueue(dequeuedItem);
@@ -210,6 +213,103 @@ namespace UnitTests
             });
 
             Assert.Equal(expectedValue, result);
+        }
+
+        [Fact]
+        public void Concurrent_DequeueRemoval()
+        {
+            var collection = new FifoishQueue<long>();
+            var expected = new HashSet<long>(Enumerable.Range(0, 10_000_000).Select(x => (long)x));
+            long expectedValue = expected.Sum();
+
+            var removal = new List<IRemoveable<long>>();
+            //Prime the collection
+            foreach (var item in expected)
+            {
+                removal.Add(collection.Enqueue(item));
+            }
+
+            var dequeueWork = Task.Run(() =>
+                {
+                    long localTotal = 0;
+                    while (collection.TryDequeue(out var dequeuedItem))
+                    {
+                        localTotal += dequeuedItem;
+                    }
+                    return localTotal;
+                }
+            );
+
+            var removeWork = Task.Run(() =>
+                {
+                    long localTotal = 0;
+                    foreach (var remove in removal)
+                    {
+                        if (remove.TryRemove(out var item)) localTotal += item;
+                    }
+                    return localTotal;
+                }
+           );
+
+            Task.WaitAll(dequeueWork, removeWork);
+
+            Assert.Equal(expectedValue, dequeueWork.Result + removeWork.Result);
+        }
+
+        //[Fact]
+        public void EnqueueDequeue_perftest()
+        {
+            var collection = new FifoishQueue<int>();
+
+            var produce = Task.Run(() => Parallel.ForEach(Enumerable.Range(0, 100_000_000), item => collection.Enqueue(item)));
+
+            //var result = new System.Collections.Concurrent.ConcurrentQueue<int>();
+            var consume = Task.Run(() =>
+                Parallel.ForEach(Enumerable.Range(0, 100_000_000), ignore => {
+                    int dequeuedItem;
+                    while (!collection.TryDequeue(out dequeuedItem)) ;
+                })
+            );
+
+            Task.WaitAll(produce, consume);
+        }
+
+        //[Fact]
+        public void EnqueueDequeue_perftest2()
+        {
+            var collection = new System.Collections.Concurrent.ConcurrentStack<int>();
+
+            var produce = Task.Run(() => Parallel.ForEach(Enumerable.Range(0, 100_000_000), item => collection.Push(item)));
+
+            //var result = new System.Collections.Concurrent.ConcurrentQueue<int>();
+            var consume = Task.Run(() =>
+                Parallel.ForEach(Enumerable.Range(0, 100_000_000), ignore => {
+                    int dequeuedItem;
+                    while (!collection.TryPop(out dequeuedItem)) ;
+                    //result.Enqueue(dequeuedItem);
+                })
+            );
+
+            Task.WaitAll(produce, consume);
+        }
+
+        //[Fact]
+        public void EnqueueDequeue_perftest3()
+        {
+            var collection = new System.Collections.Concurrent.ConcurrentQueue<int>();
+
+            var produce = Task.Run(() => Parallel.ForEach(Enumerable.Range(0, 100_000_000), item => collection.Enqueue(item)));
+
+            var result = new System.Collections.Concurrent.ConcurrentQueue<int>();
+            var consume = Task.Run(() =>
+                Parallel.ForEach(Enumerable.Range(0, 100_000_000), ignore => {
+                    int dequeuedItem;
+                    while (!collection.TryDequeue(out dequeuedItem)) ;
+                    result.Enqueue(dequeuedItem);
+                })
+            );
+
+            Task.WaitAll(produce, consume);
         }
     }
 }
